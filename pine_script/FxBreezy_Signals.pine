@@ -1,137 +1,80 @@
 //@version=6
 indicator("FxBreezy Signals", overlay=true, max_bars_back=500)
 
-// ============================================================
-// INPUTS
-// ============================================================
-ema_fast_len  = input.int(50,   "Fast EMA (Trend)",            group="Trend")
-ema_slow_len  = input.int(200,  "Slow EMA (Trend)",            group="Trend")
-vol_ma_len    = input.int(20,   "Volume MA Length",            group="Volume")
-vol_mult      = input.float(1.5,"Volume Multiplier (x avg)",   group="Volume")
-atr_len       = input.int(14,   "ATR Length",                  group="Risk")
-atr_mult      = input.float(1.5,"ATR Stop-Loss Multiplier",    group="Risk")
-rr_ratio      = input.float(2.0,"Risk : Reward Ratio",         group="Risk")
-show_emas     = input.bool(true, "Show EMAs",                  group="Display")
-show_sessions = input.bool(true, "Highlight Sessions",         group="Display")
+// ── INPUTS ──────────────────────────────────────────────────
+ema_fast_len  = input.int(50,    "Fast EMA (Trend)",           group="Trend")
+ema_slow_len  = input.int(200,   "Slow EMA (Trend)",           group="Trend")
+vol_ma_len    = input.int(20,    "Volume MA Length",           group="Volume")
+vol_mult      = input.float(1.5, "Volume Multiplier (x avg)", group="Volume")
+atr_len       = input.int(14,    "ATR Length",                group="Risk")
+atr_mult      = input.float(1.5, "ATR Stop-Loss Multiplier",  group="Risk")
+rr_ratio      = input.float(2.0, "Risk : Reward Ratio",       group="Risk")
+show_emas     = input.bool(true,  "Show EMAs",                group="Display")
+show_sessions = input.bool(true,  "Highlight Sessions",       group="Display")
 
-// ============================================================
-// SESSION DETECTION  (times in GMT)
-// London  08:00 – 17:00 | New York 13:00 – 22:00
-// ============================================================
-london_t = time(timeframe.period, "0800-1700:1234567", "GMT+0")
-ny_t     = time(timeframe.period, "1300-2200:1234567", "GMT+0")
-
-in_london  = not na(london_t)
-in_ny      = not na(ny_t)
-in_session = in_london or in_ny
+// ── SESSIONS (GMT) ──────────────────────────────────────────
+london_t    = time(timeframe.period, "0800-1700:1234567", "GMT+0")
+ny_t        = time(timeframe.period, "1300-2200:1234567", "GMT+0")
+in_london   = not na(london_t)
+in_ny       = not na(ny_t)
+in_session  = in_london or in_ny
 session_tag = in_london ? "London" : "New York"
 
-// ============================================================
-// TREND  —  EMA 50 / EMA 200
-// ============================================================
-ema_fast = ta.ema(close, ema_fast_len)
-ema_slow = ta.ema(close, ema_slow_len)
-
+// ── TREND  EMA 50 / 200 ─────────────────────────────────────
+ema_fast   = ta.ema(close, ema_fast_len)
+ema_slow   = ta.ema(close, ema_slow_len)
 bull_trend = ema_fast > ema_slow
 bear_trend = ema_fast < ema_slow
 
-// ============================================================
-// VOLUME CONFIRMATION
-// ============================================================
+// ── VOLUME ──────────────────────────────────────────────────
 vol_avg  = ta.sma(volume, vol_ma_len)
 high_vol = volume > vol_avg * vol_mult
 
-// ============================================================
-// PRICE ACTION PATTERNS
-// ============================================================
+// ── PRICE ACTION ────────────────────────────────────────────
 body       = math.abs(close - open)
-upper_wick = high  - math.max(close, open)
+upper_wick = high - math.max(close, open)
 lower_wick = math.min(close, open) - low
 
-// Engulfing candles
 bull_engulf = close > open and close[1] < open[1] and close >= open[1] and open <= close[1]
 bear_engulf = close < open and close[1] > open[1] and close <= open[1] and open >= close[1]
+bull_pin    = body > 0 and lower_wick >= body * 2.0 and upper_wick <= body * 0.5
+bear_pin    = body > 0 and upper_wick >= body * 2.0 and lower_wick <= body * 0.5
+bull_pa     = bull_engulf or bull_pin
+bear_pa     = bear_engulf or bear_pin
 
-// Pin bars
-bull_pin = body > 0 and lower_wick >= body * 2.0 and upper_wick <= body * 0.5
-bear_pin = body > 0 and upper_wick >= body * 2.0 and lower_wick <= body * 0.5
-
-bull_pa = bull_engulf or bull_pin
-bear_pa = bear_engulf or bear_pin
-
-// ============================================================
-// SIGNAL CONDITIONS
-// ============================================================
+// ── SIGNALS ─────────────────────────────────────────────────
 buy_signal  = bull_trend and in_session and high_vol and bull_pa
 sell_signal = bear_trend and in_session and high_vol and bear_pa
 
-// ============================================================
-// ATR-BASED R:R BOX  +  ENTRY LABEL
-// ============================================================
+// ── R:R BOXES ───────────────────────────────────────────────
 atr = ta.atr(atr_len)
 
 if buy_signal
-    entry = close
-    sl    = entry - atr * atr_mult
-    tp    = entry + atr * atr_mult * rr_ratio
-    box.new(bar_index, tp, bar_index + 30, sl,
-            border_color = color.green,
-            bgcolor      = color.new(color.green, 82),
-            extend       = extend.none)
-    line.new(bar_index, entry, bar_index + 30, entry,
-             color = color.white, style = line.style_dashed, width = 1)
-    label.new(bar_index, sl - atr * 0.3,
-              "BUY  |  RR 1:" + str.tostring(rr_ratio, "#.#") +
-              "\nEntry : " + str.tostring(entry, "#.#####") +
-              "\nSL    : " + str.tostring(sl,    "#.#####") +
-              "\nTP    : " + str.tostring(tp,    "#.#####"),
-              style     = label.style_label_up,
-              color     = color.green,
-              textcolor = color.white,
-              size      = size.small)
-    alert("BUY|" + syminfo.ticker + "|" +
-          str.tostring(entry, "#.#####") + "|" +
-          str.tostring(sl,    "#.#####") + "|" +
-          str.tostring(tp,    "#.#####") + "|" +
-          session_tag + "|" + str.tostring(rr_ratio, "#.#"),
-          alert.freq_once_per_bar)
+    float entry       = close
+    float sl          = entry - atr * atr_mult
+    float tp          = entry + atr * atr_mult * rr_ratio
+    string lbl        = "BUY  |  RR 1:" + str.tostring(rr_ratio, "#.#") + "\nEntry : " + str.tostring(entry, "#.#####") + "\nSL    : " + str.tostring(sl, "#.#####") + "\nTP    : " + str.tostring(tp, "#.#####")
+    string alert_msg  = "BUY|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
+    box.new(bar_index, tp, bar_index + 30, sl, border_color=color.green, bgcolor=color.new(color.green, 82), extend=extend.none)
+    line.new(bar_index, entry, bar_index + 30, entry, color=color.white, style=line.style_dashed, width=1)
+    label.new(bar_index, sl - atr * 0.3, lbl, style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    alert(alert_msg, alert.freq_once_per_bar)
 
 if sell_signal
-    entry = close
-    sl    = entry + atr * atr_mult
-    tp    = entry - atr * atr_mult * rr_ratio
-    box.new(bar_index, sl, bar_index + 30, tp,
-            border_color = color.red,
-            bgcolor      = color.new(color.red, 82),
-            extend       = extend.none)
-    line.new(bar_index, entry, bar_index + 30, entry,
-             color = color.white, style = line.style_dashed, width = 1)
-    label.new(bar_index, sl + atr * 0.3,
-              "SELL  |  RR 1:" + str.tostring(rr_ratio, "#.#") +
-              "\nEntry : " + str.tostring(entry, "#.#####") +
-              "\nSL    : " + str.tostring(sl,    "#.#####") +
-              "\nTP    : " + str.tostring(tp,    "#.#####"),
-              style     = label.style_label_down,
-              color     = color.red,
-              textcolor = color.white,
-              size      = size.small)
-    alert("SELL|" + syminfo.ticker + "|" +
-          str.tostring(entry, "#.#####") + "|" +
-          str.tostring(sl,    "#.#####") + "|" +
-          str.tostring(tp,    "#.#####") + "|" +
-          session_tag + "|" + str.tostring(rr_ratio, "#.#"),
-          alert.freq_once_per_bar)
+    float entry       = close
+    float sl          = entry + atr * atr_mult
+    float tp          = entry - atr * atr_mult * rr_ratio
+    string lbl        = "SELL  |  RR 1:" + str.tostring(rr_ratio, "#.#") + "\nEntry : " + str.tostring(entry, "#.#####") + "\nSL    : " + str.tostring(sl, "#.#####") + "\nTP    : " + str.tostring(tp, "#.#####")
+    string alert_msg  = "SELL|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
+    box.new(bar_index, sl, bar_index + 30, tp, border_color=color.red, bgcolor=color.new(color.red, 82), extend=extend.none)
+    line.new(bar_index, entry, bar_index + 30, entry, color=color.white, style=line.style_dashed, width=1)
+    label.new(bar_index, sl + atr * 0.3, lbl, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+    alert(alert_msg, alert.freq_once_per_bar)
 
-// ============================================================
-// VISUAL PLOTS
-// ============================================================
-plot(show_emas ? ema_fast : na, "EMA 50",  color = color.new(color.blue,   0), linewidth = 1)
-plot(show_emas ? ema_slow : na, "EMA 200", color = color.new(color.orange, 0), linewidth = 2)
-
-bgcolor(show_sessions and in_london and not in_ny ? color.new(color.blue,   93) : na, title = "London Session")
-bgcolor(show_sessions and in_ny                   ? color.new(color.orange, 93) : na, title = "New York Session")
-
-plotshape(buy_signal,  style = shape.triangleup,   location = location.belowbar,
-          color = color.green, size = size.normal, title = "Buy Signal")
-plotshape(sell_signal, style = shape.triangledown, location = location.abovebar,
-          color = color.red,   size = size.normal, title = "Sell Signal")
+// ── PLOTS ───────────────────────────────────────────────────
+plot(show_emas ? ema_fast : na, "EMA 50",  color=color.new(color.blue,   0), linewidth=1)
+plot(show_emas ? ema_slow : na, "EMA 200", color=color.new(color.orange, 0), linewidth=2)
+bgcolor(show_sessions and in_london and not in_ny ? color.new(color.blue,   93) : na, title="London Session")
+bgcolor(show_sessions and in_ny                   ? color.new(color.orange, 93) : na, title="New York Session")
+plotshape(buy_signal,  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.normal, title="Buy Signal")
+plotshape(sell_signal, style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.normal, title="Sell Signal")
