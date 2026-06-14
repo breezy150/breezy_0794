@@ -20,7 +20,7 @@ in_ny       = not na(ny_t)
 in_session  = in_london or in_ny
 session_tag = in_london ? "London" : "New York"
 
-// ── TREND  EMA 50 / 200 ─────────────────────────────────────
+// ── TREND ─────────────────────────────────────────────────────
 ema_fast   = ta.ema(close, ema_fast_len)
 ema_slow   = ta.ema(close, ema_slow_len)
 bull_trend = ema_fast > ema_slow
@@ -46,29 +46,35 @@ bear_pa     = bear_engulf or bear_pin
 buy_signal  = bull_trend and in_session and high_vol and bull_pa
 sell_signal = bear_trend and in_session and high_vol and bear_pa
 
-// ── R:R BOXES ───────────────────────────────────────────────
+// ── R:R LEVELS (extend.right — always visible at any zoom) ──────────
 atr = ta.atr(atr_len)
 
 if buy_signal
-    float entry       = close
-    float sl          = entry - atr * atr_mult
-    float tp          = entry + atr * atr_mult * rr_ratio
-    string lbl        = "BUY  |  RR 1:" + str.tostring(rr_ratio, "#.#") + "\nEntry : " + str.tostring(entry, "#.#####") + "\nSL    : " + str.tostring(sl, "#.#####") + "\nTP    : " + str.tostring(tp, "#.#####")
-    string alert_msg  = "BUY|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
-    box.new(bar_index, tp, bar_index + 30, sl, border_color=color.green, bgcolor=color.new(color.green, 82), extend=extend.none)
-    line.new(bar_index, entry, bar_index + 30, entry, color=color.white, style=line.style_dashed, width=1)
-    label.new(bar_index, sl - atr * 0.3, lbl, style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    float entry      = close
+    float sl         = entry - atr * atr_mult
+    float tp         = entry + atr * atr_mult * rr_ratio
+    string lbl_text  = "BUY │ RR 1:" + str.tostring(rr_ratio, "#.#") + "  Entry: " + str.tostring(entry, "#.#####") + "  SL: " + str.tostring(sl, "#.#####") + "  TP: " + str.tostring(tp, "#.#####")
+    string alert_msg = "BUY|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
+    l_tp    = line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.green,                style=line.style_solid,  width=2)
+    l_entry = line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.white,                style=line.style_dashed, width=1)
+    l_sl    = line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.red,                  style=line.style_solid,  width=2)
+    linefill.new(l_entry, l_tp, color=color.new(color.green, 88))
+    linefill.new(l_sl,    l_entry, color=color.new(color.red, 88))
+    label.new(bar_index, tp, lbl_text, style=label.style_label_down, color=color.green, textcolor=color.white, size=size.small)
     alert(alert_msg, alert.freq_once_per_bar)
 
 if sell_signal
-    float entry       = close
-    float sl          = entry + atr * atr_mult
-    float tp          = entry - atr * atr_mult * rr_ratio
-    string lbl        = "SELL  |  RR 1:" + str.tostring(rr_ratio, "#.#") + "\nEntry : " + str.tostring(entry, "#.#####") + "\nSL    : " + str.tostring(sl, "#.#####") + "\nTP    : " + str.tostring(tp, "#.#####")
-    string alert_msg  = "SELL|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
-    box.new(bar_index, sl, bar_index + 30, tp, border_color=color.red, bgcolor=color.new(color.red, 82), extend=extend.none)
-    line.new(bar_index, entry, bar_index + 30, entry, color=color.white, style=line.style_dashed, width=1)
-    label.new(bar_index, sl + atr * 0.3, lbl, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+    float entry      = close
+    float sl         = entry + atr * atr_mult
+    float tp         = entry - atr * atr_mult * rr_ratio
+    string lbl_text  = "SELL │ RR 1:" + str.tostring(rr_ratio, "#.#") + "  Entry: " + str.tostring(entry, "#.#####") + "  SL: " + str.tostring(sl, "#.#####") + "  TP: " + str.tostring(tp, "#.#####")
+    string alert_msg = "SELL|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
+    l_sl    = line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.red,   style=line.style_solid,  width=2)
+    l_entry = line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.white, style=line.style_dashed, width=1)
+    l_tp    = line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.green, style=line.style_solid,  width=2)
+    linefill.new(l_entry, l_sl, color=color.new(color.red,   88))
+    linefill.new(l_tp,    l_entry, color=color.new(color.green, 88))
+    label.new(bar_index, sl, lbl_text, style=label.style_label_up, color=color.red, textcolor=color.white, size=size.small)
     alert(alert_msg, alert.freq_once_per_bar)
 
 // ── PLOTS ───────────────────────────────────────────────────
