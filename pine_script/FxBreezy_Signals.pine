@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("FxBreezy Signals", overlay=true, max_bars_back=500)
 
 // ============================================================
@@ -52,7 +52,7 @@ lower_wick = math.min(close, open) - low
 bull_engulf = close > open and close[1] < open[1] and close >= open[1] and open <= close[1]
 bear_engulf = close < open and close[1] > open[1] and close <= open[1] and open >= close[1]
 
-// Pin bars  (wick >= 2x body, opposite wick tiny)
+// Pin bars
 bull_pin = body > 0 and lower_wick >= body * 2.0 and upper_wick <= body * 0.5
 bear_pin = body > 0 and upper_wick >= body * 2.0 and lower_wick <= body * 0.5
 
@@ -75,16 +75,20 @@ if buy_signal
     sl    = entry - atr * atr_mult
     tp    = entry + atr * atr_mult * rr_ratio
     box.new(bar_index, tp, bar_index + 30, sl,
-            border_color=color.green, bgcolor=color.new(color.green, 82), extend=extend.none)
+            border_color = color.green,
+            bgcolor      = color.new(color.green, 82),
+            extend       = extend.none)
     line.new(bar_index, entry, bar_index + 30, entry,
-             color=color.white, style=line.style_dashed, width=1)
+             color = color.white, style = line.style_dashed, width = 1)
     label.new(bar_index, sl - atr * 0.3,
               "BUY  |  RR 1:" + str.tostring(rr_ratio, "#.#") +
               "\nEntry : " + str.tostring(entry, "#.#####") +
               "\nSL    : " + str.tostring(sl,    "#.#####") +
               "\nTP    : " + str.tostring(tp,    "#.#####"),
-              style=label.style_label_up, color=color.green,
-              textcolor=color.white, size=size.small)
+              style     = label.style_label_up,
+              color     = color.green,
+              textcolor = color.white,
+              size      = size.small)
     alert("BUY|" + syminfo.ticker + "|" +
           str.tostring(entry, "#.#####") + "|" +
           str.tostring(sl,    "#.#####") + "|" +
@@ -97,16 +101,20 @@ if sell_signal
     sl    = entry + atr * atr_mult
     tp    = entry - atr * atr_mult * rr_ratio
     box.new(bar_index, sl, bar_index + 30, tp,
-            border_color=color.red, bgcolor=color.new(color.red, 82), extend=extend.none)
+            border_color = color.red,
+            bgcolor      = color.new(color.red, 82),
+            extend       = extend.none)
     line.new(bar_index, entry, bar_index + 30, entry,
-             color=color.white, style=line.style_dashed, width=1)
+             color = color.white, style = line.style_dashed, width = 1)
     label.new(bar_index, sl + atr * 0.3,
               "SELL  |  RR 1:" + str.tostring(rr_ratio, "#.#") +
               "\nEntry : " + str.tostring(entry, "#.#####") +
               "\nSL    : " + str.tostring(sl,    "#.#####") +
               "\nTP    : " + str.tostring(tp,    "#.#####"),
-              style=label.style_label_down, color=color.red,
-              textcolor=color.white, size=size.small)
+              style     = label.style_label_down,
+              color     = color.red,
+              textcolor = color.white,
+              size      = size.small)
     alert("SELL|" + syminfo.ticker + "|" +
           str.tostring(entry, "#.#####") + "|" +
           str.tostring(sl,    "#.#####") + "|" +
@@ -117,13 +125,13 @@ if sell_signal
 // ============================================================
 // VISUAL PLOTS
 // ============================================================
-plot(show_emas ? ema_fast : na, "EMA 50",  color=color.new(color.blue,   0), linewidth=1)
-plot(show_emas ? ema_slow : na, "EMA 200", color=color.new(color.orange, 0), linewidth=2)
+plot(show_emas ? ema_fast : na, "EMA 50",  color = color.new(color.blue,   0), linewidth = 1)
+plot(show_emas ? ema_slow : na, "EMA 200", color = color.new(color.orange, 0), linewidth = 2)
 
-bgcolor(show_sessions and in_london and not in_ny ? color.new(color.blue,   93) : na, title="London Session")
-bgcolor(show_sessions and in_ny                   ? color.new(color.orange, 93) : na, title="New York Session")
+bgcolor(show_sessions and in_london and not in_ny ? color.new(color.blue,   93) : na, title = "London Session")
+bgcolor(show_sessions and in_ny                   ? color.new(color.orange, 93) : na, title = "New York Session")
 
-plotshape(buy_signal,  style=shape.triangleup,   location=location.belowbar,
-          color=color.green, size=size.normal, title="Buy Signal")
-plotshape(sell_signal, style=shape.triangledown, location=location.abovebar,
-          color=color.red,   size=size.normal, title="Sell Signal")
+plotshape(buy_signal,  style = shape.triangleup,   location = location.belowbar,
+          color = color.green, size = size.normal, title = "Buy Signal")
+plotshape(sell_signal, style = shape.triangledown, location = location.abovebar,
+          color = color.red,   size = size.normal, title = "Sell Signal")
