@@ -1,7 +1,7 @@
 //@version=6
-indicator("FxBreezy Signals", overlay=true, max_bars_back=500, max_lines_count=100, max_labels_count=50)
+indicator("FxBreezy Signals", overlay=true, max_bars_back=500)
 
-// ── INPUTS ──────────────────────────────────────────────────
+// ── INPUTS ────────────────────────────────────────────────
 ema_fast_len  = input.int(50,    "Fast EMA (Trend)",           group="Trend")
 ema_slow_len  = input.int(200,   "Slow EMA (Trend)",           group="Trend")
 vol_ma_len    = input.int(20,    "Volume MA Length",           group="Volume")
@@ -21,13 +21,11 @@ in_ny       = not na(ny_t)
 in_session  = in_london or in_ny
 session_tag = in_london ? "London" : "New York"
 
-// ── TREND  EMA 50 / 200 ─────────────────────────────────────
+// ── TREND ────────────────────────────────────────────────────
 ema_fast   = ta.ema(close, ema_fast_len)
 ema_slow   = ta.ema(close, ema_slow_len)
 bull_trend = ema_fast > ema_slow
 bear_trend = ema_fast < ema_slow
-
-// ── EMA SLOPE  (trend must be moving, not flat) ───────────────
 bull_slope = ema_fast > ema_fast[3]
 bear_slope = ema_fast < ema_fast[3]
 
@@ -41,65 +39,106 @@ upper_wick = high - math.max(close, open)
 lower_wick = math.min(close, open) - low
 total_rng  = high - low
 
-// Strong engulfing: current body must be larger than previous candle's full range
 bull_engulf = close > open and close[1] < open[1] and body > total_rng[1] * 0.8 and close > high[1]
 bear_engulf = close < open and close[1] > open[1] and body > total_rng[1] * 0.8 and close < low[1]
+bull_pin    = body > 0 and lower_wick >= body * 2.5 and upper_wick <= body * 0.3
+bear_pin    = body > 0 and upper_wick >= body * 2.5 and lower_wick <= body * 0.3
+bull_pa     = bull_engulf or bull_pin
+bear_pa     = bear_engulf or bear_pin
 
-// Quality pin bars: wick at least 2.5x body
-bull_pin = body > 0 and lower_wick >= body * 2.5 and upper_wick <= body * 0.3
-bear_pin = body > 0 and upper_wick >= body * 2.5 and lower_wick <= body * 0.3
-
-bull_pa = bull_engulf or bull_pin
-bear_pa = bear_engulf or bear_pin
-
-// ── COOLDOWN  (no repeat signals within N bars) ────────────────
+// ── COOLDOWN ────────────────────────────────────────────────
 var int last_buy_bar  = -999
 var int last_sell_bar = -999
-
 buy_ready  = bar_index - last_buy_bar  >= cooldown_bars
 sell_ready = bar_index - last_sell_bar >= cooldown_bars
 
-// ── SIGNALS ─────────────────────────────────────────────────
-buy_signal  = bull_trend and bull_slope and in_session and high_vol and bull_pa and buy_ready
-sell_signal = bear_trend and bear_slope and in_session and high_vol and bear_pa and sell_ready
+// ── SIGNALS  (barstate.isconfirmed = fires only on bar close, no repainting) ─
+raw_buy  = bull_trend and bull_slope and in_session and high_vol and bull_pa and buy_ready
+raw_sell = bear_trend and bear_slope and in_session and high_vol and bear_pa and sell_ready
 
-// ── R:R LEVELS ──────────────────────────────────────────────
+buy_signal  = raw_buy  and barstate.isconfirmed
+sell_signal = raw_sell and barstate.isconfirmed
+
+// ── PERSISTENT DRAWING OBJECTS  (one set at a time) ────────────────
+var line     l_tp      = na
+var line     l_entry   = na
+var line     l_sl      = na
+var linefill lf_profit = na
+var linefill lf_loss   = na
+var label    lbl_tp    = na
+var label    lbl_entry = na
+var label    lbl_sl    = na
+
 atr = ta.atr(atr_len)
 
 if buy_signal
     last_buy_bar := bar_index
-    float entry      = close
-    float sl         = entry - atr * atr_mult
-    float tp         = entry + atr * atr_mult * rr_ratio
-    string lbl_text  = "🟢 BUY | RR 1:" + str.tostring(rr_ratio, "#.#") + "  Entry: " + str.tostring(entry, "#.#####") + "  SL: " + str.tostring(sl, "#.#####") + "  TP: " + str.tostring(tp, "#.#####")
-    string alert_msg = "BUY|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
-    l_tp    = line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.green, style=line.style_solid,  width=2)
-    l_entry = line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.white, style=line.style_dashed, width=1)
-    l_sl    = line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.red,   style=line.style_solid,  width=2)
-    linefill.new(l_entry, l_tp, color=color.new(color.green, 88))
-    linefill.new(l_sl,    l_entry, color=color.new(color.red, 88))
-    label.new(bar_index, tp, lbl_text, style=label.style_label_down, color=color.green, textcolor=color.white, size=size.small)
-    alert(alert_msg, alert.freq_once_per_bar)
+    line.delete(l_tp)
+    line.delete(l_entry)
+    line.delete(l_sl)
+    linefill.delete(lf_profit)
+    linefill.delete(lf_loss)
+    label.delete(lbl_tp)
+    label.delete(lbl_entry)
+    label.delete(lbl_sl)
+
+    float entry   = close
+    float sl      = entry - atr * atr_mult
+    float tp      = entry + atr * atr_mult * rr_ratio
+    float pip_val = syminfo.mintick * 10
+    float sl_pips = math.abs(entry - sl) / pip_val
+    float tp_pips = math.abs(tp - entry) / pip_val
+    float sl_pct  = math.abs(entry - sl) / entry * 100
+    float tp_pct  = math.abs(tp - entry) / entry * 100
+
+    l_tp    := line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.new(color.green, 0), style=line.style_solid,  width=2)
+    l_entry := line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.new(color.white, 0), style=line.style_dashed, width=1)
+    l_sl    := line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.new(color.red,   0), style=line.style_solid,  width=2)
+    lf_profit := linefill.new(l_entry, l_tp, color=color.new(color.green, 88))
+    lf_loss   := linefill.new(l_sl,    l_entry, color=color.new(color.red, 88))
+
+    lbl_tp    := label.new(bar_index, tp,    "▲ TAKE PROFIT   +" + str.tostring(tp_pips, "#.0") + " pips  (+" + str.tostring(tp_pct, "#.##") + "%)\n" + str.tostring(tp,    "#.#####"), style=label.style_label_left, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
+    lbl_entry := label.new(bar_index, entry, "● BUY ENTRY   "  + str.tostring(entry, "#.#####") + "   RR 1:" + str.tostring(rr_ratio, "#.#") + "   " + session_tag,         style=label.style_label_left, color=color.new(color.gray,  20), textcolor=color.white, size=size.small)
+    lbl_sl    := label.new(bar_index, sl,    "▼ STOP LOSS     -" + str.tostring(sl_pips, "#.0") + " pips  (-" + str.tostring(sl_pct,  "#.##") + "%)\n" + str.tostring(sl,    "#.#####"), style=label.style_label_left, color=color.new(color.red,   10), textcolor=color.white, size=size.small)
+
+    alert("BUY|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#"), alert.freq_once_per_bar)
 
 if sell_signal
     last_sell_bar := bar_index
-    float entry      = close
-    float sl         = entry + atr * atr_mult
-    float tp         = entry - atr * atr_mult * rr_ratio
-    string lbl_text  = "🔴 SELL | RR 1:" + str.tostring(rr_ratio, "#.#") + "  Entry: " + str.tostring(entry, "#.#####") + "  SL: " + str.tostring(sl, "#.#####") + "  TP: " + str.tostring(tp, "#.#####")
-    string alert_msg = "SELL|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#")
-    l_sl    = line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.red,   style=line.style_solid,  width=2)
-    l_entry = line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.white, style=line.style_dashed, width=1)
-    l_tp    = line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.green, style=line.style_solid,  width=2)
-    linefill.new(l_entry, l_sl,  color=color.new(color.red,   88))
-    linefill.new(l_tp,    l_entry, color=color.new(color.green, 88))
-    label.new(bar_index, sl, lbl_text, style=label.style_label_up, color=color.red, textcolor=color.white, size=size.small)
-    alert(alert_msg, alert.freq_once_per_bar)
+    line.delete(l_tp)
+    line.delete(l_entry)
+    line.delete(l_sl)
+    linefill.delete(lf_profit)
+    linefill.delete(lf_loss)
+    label.delete(lbl_tp)
+    label.delete(lbl_entry)
+    label.delete(lbl_sl)
+
+    float entry   = close
+    float sl      = entry + atr * atr_mult
+    float tp      = entry - atr * atr_mult * rr_ratio
+    float pip_val = syminfo.mintick * 10
+    float sl_pips = math.abs(entry - sl) / pip_val
+    float tp_pips = math.abs(tp - entry) / pip_val
+    float sl_pct  = math.abs(entry - sl) / entry * 100
+    float tp_pct  = math.abs(tp - entry) / entry * 100
+
+    l_sl    := line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.new(color.red,   0), style=line.style_solid,  width=2)
+    l_entry := line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.new(color.white, 0), style=line.style_dashed, width=1)
+    l_tp    := line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.new(color.green, 0), style=line.style_solid,  width=2)
+    lf_loss   := linefill.new(l_entry, l_sl,  color=color.new(color.red,   88))
+    lf_profit := linefill.new(l_tp,    l_entry, color=color.new(color.green, 88))
+
+    lbl_sl    := label.new(bar_index, sl,    "▲ STOP LOSS     -" + str.tostring(sl_pips, "#.0") + " pips  (-" + str.tostring(sl_pct,  "#.##") + "%)\n" + str.tostring(sl,    "#.#####"), style=label.style_label_left, color=color.new(color.red,   10), textcolor=color.white, size=size.small)
+    lbl_entry := label.new(bar_index, entry, "● SELL ENTRY   " + str.tostring(entry, "#.#####") + "   RR 1:" + str.tostring(rr_ratio, "#.#") + "   " + session_tag,          style=label.style_label_left, color=color.new(color.gray,  20), textcolor=color.white, size=size.small)
+    lbl_tp    := label.new(bar_index, tp,    "▼ TAKE PROFIT   +" + str.tostring(tp_pips, "#.0") + " pips  (+" + str.tostring(tp_pct, "#.##") + "%)\n" + str.tostring(tp,    "#.#####"), style=label.style_label_left, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
+
+    alert("SELL|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#"), alert.freq_once_per_bar)
 
 // ── PLOTS ───────────────────────────────────────────────────
 plot(show_emas ? ema_fast : na, "EMA 50",  color=color.new(color.blue,   0), linewidth=1)
 plot(show_emas ? ema_slow : na, "EMA 200", color=color.new(color.orange, 0), linewidth=2)
 bgcolor(show_sessions and in_london and not in_ny ? color.new(color.blue,   93) : na, title="London Session")
 bgcolor(show_sessions and in_ny                   ? color.new(color.orange, 93) : na, title="New York Session")
-plotshape(buy_signal,  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.normal, title="Buy Signal")
-plotshape(sell_signal, style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.normal, title="Sell Signal")
+plotshape(buy_signal,  style=shape.triangleup,   location=location.belowbar, color=color.green, size=size.tiny, title="Buy Signal")
+plotshape(sell_signal, style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.tiny, title="Sell Signal")
