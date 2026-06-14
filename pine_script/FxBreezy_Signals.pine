@@ -21,7 +21,7 @@ in_ny       = not na(ny_t)
 in_session  = in_london or in_ny
 session_tag = in_london ? "London" : "New York"
 
-// ── TREND ────────────────────────────────────────────────────
+// ── TREND ───────────────────────────────────────────────────
 ema_fast   = ta.ema(close, ema_fast_len)
 ema_slow   = ta.ema(close, ema_slow_len)
 bull_trend = ema_fast > ema_slow
@@ -52,86 +52,83 @@ var int last_sell_bar = -999
 buy_ready  = bar_index - last_buy_bar  >= cooldown_bars
 sell_ready = bar_index - last_sell_bar >= cooldown_bars
 
-// ── SIGNALS  (barstate.isconfirmed = fires only on bar close, no repainting) ─
-raw_buy  = bull_trend and bull_slope and in_session and high_vol and bull_pa and buy_ready
-raw_sell = bear_trend and bear_slope and in_session and high_vol and bear_pa and sell_ready
-
+// ── SIGNALS (fires on bar close only — no repainting) ─────────────
+raw_buy     = bull_trend and bull_slope and in_session and high_vol and bull_pa and buy_ready
+raw_sell    = bear_trend and bear_slope and in_session and high_vol and bear_pa and sell_ready
 buy_signal  = raw_buy  and barstate.isconfirmed
 sell_signal = raw_sell and barstate.isconfirmed
 
-// ── PERSISTENT DRAWING OBJECTS  (one set at a time) ────────────────
-var line     l_tp      = na
-var line     l_entry   = na
-var line     l_sl      = na
-var linefill lf_profit = na
-var linefill lf_loss   = na
-var label    lbl_tp    = na
-var label    lbl_entry = na
-var label    lbl_sl    = na
+// ── PERSISTENT DRAWING OBJECTS (one active set at a time) ────────
+var box   b_profit  = na
+var box   b_loss    = na
+var line  l_entry   = na
+var label lbl_tp    = na
+var label lbl_sl    = na
+var label lbl_entry = na
+
+// Extend the active boxes rightward on every new bar so they always reach the chart edge
+if not na(b_profit)
+    box.set_right(b_profit,  bar_index + 5)
+if not na(b_loss)
+    box.set_right(b_loss,    bar_index + 5)
+if not na(l_entry)
+    line.set_x2(l_entry,     bar_index + 5)
 
 atr = ta.atr(atr_len)
 
 if buy_signal
     last_buy_bar := bar_index
-    line.delete(l_tp)
+    box.delete(b_profit)
+    box.delete(b_loss)
     line.delete(l_entry)
-    line.delete(l_sl)
-    linefill.delete(lf_profit)
-    linefill.delete(lf_loss)
     label.delete(lbl_tp)
-    label.delete(lbl_entry)
     label.delete(lbl_sl)
+    label.delete(lbl_entry)
 
     float entry   = close
     float sl      = entry - atr * atr_mult
     float tp      = entry + atr * atr_mult * rr_ratio
     float pip_val = syminfo.mintick * 10
-    float sl_pips = math.abs(entry - sl) / pip_val
-    float tp_pips = math.abs(tp - entry) / pip_val
-    float sl_pct  = math.abs(entry - sl) / entry * 100
-    float tp_pct  = math.abs(tp - entry) / entry * 100
+    float sl_pips = math.abs(entry - sl)  / pip_val
+    float tp_pips = math.abs(tp - entry)  / pip_val
+    float sl_pct  = math.abs(entry - sl)  / entry * 100
+    float tp_pct  = math.abs(tp - entry)  / entry * 100
 
-    l_tp    := line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.new(color.green, 0), style=line.style_solid,  width=2)
-    l_entry := line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.new(color.white, 0), style=line.style_dashed, width=1)
-    l_sl    := line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.new(color.red,   0), style=line.style_solid,  width=2)
-    lf_profit := linefill.new(l_entry, l_tp, color=color.new(color.green, 88))
-    lf_loss   := linefill.new(l_sl,    l_entry, color=color.new(color.red, 88))
+    b_profit  := box.new(bar_index, tp,    bar_index + 5, entry, border_color=color.new(color.green, 100), bgcolor=color.new(color.green, 45))
+    b_loss    := box.new(bar_index, entry, bar_index + 5, sl,    border_color=color.new(color.red,   100), bgcolor=color.new(color.red,   45))
+    l_entry   := line.new(bar_index, entry, bar_index + 5, entry, color=color.white, style=line.style_dashed, width=2)
 
-    lbl_tp    := label.new(bar_index, tp,    "▲ TAKE PROFIT   +" + str.tostring(tp_pips, "#.0") + " pips  (+" + str.tostring(tp_pct, "#.##") + "%)\n" + str.tostring(tp,    "#.#####"), style=label.style_label_left, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
-    lbl_entry := label.new(bar_index, entry, "● BUY ENTRY   "  + str.tostring(entry, "#.#####") + "   RR 1:" + str.tostring(rr_ratio, "#.#") + "   " + session_tag,         style=label.style_label_left, color=color.new(color.gray,  20), textcolor=color.white, size=size.small)
-    lbl_sl    := label.new(bar_index, sl,    "▼ STOP LOSS     -" + str.tostring(sl_pips, "#.0") + " pips  (-" + str.tostring(sl_pct,  "#.##") + "%)\n" + str.tostring(sl,    "#.#####"), style=label.style_label_left, color=color.new(color.red,   10), textcolor=color.white, size=size.small)
+    lbl_tp    := label.new(bar_index, tp,    "▲ TAKE PROFIT   +" + str.tostring(tp_pips, "#.0") + " pips  (+" + str.tostring(tp_pct, "#.##") + "%)\n" + str.tostring(tp, "#.#####"),    style=label.style_label_left, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
+    lbl_entry := label.new(bar_index, entry, "● BUY   Entry: " + str.tostring(entry, "#.#####") + "   RR 1:" + str.tostring(rr_ratio, "#.#") + "   " + session_tag,                     style=label.style_label_left, color=color.new(color.gray,  20), textcolor=color.white, size=size.small)
+    lbl_sl    := label.new(bar_index, sl,    "▼ STOP LOSS     -" + str.tostring(sl_pips, "#.0") + " pips  (-" + str.tostring(sl_pct,  "#.##") + "%)\n" + str.tostring(sl, "#.#####"),  style=label.style_label_left, color=color.new(color.red,   10), textcolor=color.white, size=size.small)
 
     alert("BUY|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#"), alert.freq_once_per_bar)
 
 if sell_signal
     last_sell_bar := bar_index
-    line.delete(l_tp)
+    box.delete(b_profit)
+    box.delete(b_loss)
     line.delete(l_entry)
-    line.delete(l_sl)
-    linefill.delete(lf_profit)
-    linefill.delete(lf_loss)
     label.delete(lbl_tp)
-    label.delete(lbl_entry)
     label.delete(lbl_sl)
+    label.delete(lbl_entry)
 
     float entry   = close
     float sl      = entry + atr * atr_mult
     float tp      = entry - atr * atr_mult * rr_ratio
     float pip_val = syminfo.mintick * 10
-    float sl_pips = math.abs(entry - sl) / pip_val
-    float tp_pips = math.abs(tp - entry) / pip_val
-    float sl_pct  = math.abs(entry - sl) / entry * 100
-    float tp_pct  = math.abs(tp - entry) / entry * 100
+    float sl_pips = math.abs(entry - sl)  / pip_val
+    float tp_pips = math.abs(tp - entry)  / pip_val
+    float sl_pct  = math.abs(entry - sl)  / entry * 100
+    float tp_pct  = math.abs(tp - entry)  / entry * 100
 
-    l_sl    := line.new(bar_index, sl,    bar_index + 1, sl,    extend=extend.right, color=color.new(color.red,   0), style=line.style_solid,  width=2)
-    l_entry := line.new(bar_index, entry, bar_index + 1, entry, extend=extend.right, color=color.new(color.white, 0), style=line.style_dashed, width=1)
-    l_tp    := line.new(bar_index, tp,    bar_index + 1, tp,    extend=extend.right, color=color.new(color.green, 0), style=line.style_solid,  width=2)
-    lf_loss   := linefill.new(l_entry, l_sl,  color=color.new(color.red,   88))
-    lf_profit := linefill.new(l_tp,    l_entry, color=color.new(color.green, 88))
+    b_loss    := box.new(bar_index, sl,    bar_index + 5, entry, border_color=color.new(color.red,   100), bgcolor=color.new(color.red,   45))
+    b_profit  := box.new(bar_index, entry, bar_index + 5, tp,    border_color=color.new(color.green, 100), bgcolor=color.new(color.green, 45))
+    l_entry   := line.new(bar_index, entry, bar_index + 5, entry, color=color.white, style=line.style_dashed, width=2)
 
-    lbl_sl    := label.new(bar_index, sl,    "▲ STOP LOSS     -" + str.tostring(sl_pips, "#.0") + " pips  (-" + str.tostring(sl_pct,  "#.##") + "%)\n" + str.tostring(sl,    "#.#####"), style=label.style_label_left, color=color.new(color.red,   10), textcolor=color.white, size=size.small)
-    lbl_entry := label.new(bar_index, entry, "● SELL ENTRY   " + str.tostring(entry, "#.#####") + "   RR 1:" + str.tostring(rr_ratio, "#.#") + "   " + session_tag,          style=label.style_label_left, color=color.new(color.gray,  20), textcolor=color.white, size=size.small)
-    lbl_tp    := label.new(bar_index, tp,    "▼ TAKE PROFIT   +" + str.tostring(tp_pips, "#.0") + " pips  (+" + str.tostring(tp_pct, "#.##") + "%)\n" + str.tostring(tp,    "#.#####"), style=label.style_label_left, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
+    lbl_sl    := label.new(bar_index, sl,    "▲ STOP LOSS     -" + str.tostring(sl_pips, "#.0") + " pips  (-" + str.tostring(sl_pct,  "#.##") + "%)\n" + str.tostring(sl, "#.#####"),  style=label.style_label_left, color=color.new(color.red,   10), textcolor=color.white, size=size.small)
+    lbl_entry := label.new(bar_index, entry, "● SELL   Entry: " + str.tostring(entry, "#.#####") + "   RR 1:" + str.tostring(rr_ratio, "#.#") + "   " + session_tag,                    style=label.style_label_left, color=color.new(color.gray,  20), textcolor=color.white, size=size.small)
+    lbl_tp    := label.new(bar_index, tp,    "▼ TAKE PROFIT   +" + str.tostring(tp_pips, "#.0") + " pips  (+" + str.tostring(tp_pct, "#.##") + "%)\n" + str.tostring(tp, "#.#####"),   style=label.style_label_left, color=color.new(color.green, 10), textcolor=color.white, size=size.small)
 
     alert("SELL|" + syminfo.ticker + "|" + str.tostring(entry, "#.#####") + "|" + str.tostring(sl, "#.#####") + "|" + str.tostring(tp, "#.#####") + "|" + session_tag + "|" + str.tostring(rr_ratio, "#.#"), alert.freq_once_per_bar)
 
