@@ -1,0 +1,75 @@
+//@version=6
+// FxBreezy Strategy — BACKTEST VERSION
+// Add this to a chart, then open the "Strategy Tester" tab at the bottom of TradingView
+// to see Net Profit, Win Rate, Profit Factor, Max Drawdown and total trades.
+strategy("FxBreezy Strategy (Backtest)", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=2, commission_type=strategy.commission.percent, commission_value=0.002, calc_on_every_tick=false)
+
+// ── INPUTS ────────────────────────────────────────────────
+ema_fast_len  = input.int(50,    "Fast EMA (Trend)",           group="Trend")
+ema_slow_len  = input.int(200,   "Slow EMA (Trend)",           group="Trend")
+vol_ma_len    = input.int(20,    "Volume MA Length",           group="Volume")
+vol_mult      = input.float(2.0, "Volume Multiplier (x avg)", group="Volume", minval=1.0, step=0.1)
+atr_len       = input.int(14,    "ATR Length",                group="Risk")
+atr_mult      = input.float(1.5, "ATR Stop-Loss Multiplier",  group="Risk")
+rr_ratio      = input.float(2.0, "Risk : Reward Ratio",       group="Risk")
+cooldown_bars = input.int(10,    "Min Bars Between Signals",  group="Filter", minval=1)
+use_sessions  = input.bool(true, "Trade Only In Sessions",   group="Filter")
+
+// ── SESSIONS (GMT) ──────────────────────────────────────────
+london_t   = time(timeframe.period, "0800-1700:1234567", "GMT+0")
+ny_t       = time(timeframe.period, "1300-2200:1234567", "GMT+0")
+in_session = use_sessions ? (not na(london_t) or not na(ny_t)) : true
+
+// ── TREND ───────────────────────────────────────────────────
+ema_fast   = ta.ema(close, ema_fast_len)
+ema_slow   = ta.ema(close, ema_slow_len)
+bull_trend = ema_fast > ema_slow
+bear_trend = ema_fast < ema_slow
+bull_slope = ema_fast > ema_fast[3]
+bear_slope = ema_fast < ema_fast[3]
+
+// ── VOLUME ────────────────────────────────────────────────
+vol_avg  = ta.sma(volume, vol_ma_len)
+high_vol = volume > vol_avg * vol_mult
+
+// ── PRICE ACTION ────────────────────────────────────────────
+body       = math.abs(close - open)
+upper_wick = high - math.max(close, open)
+lower_wick = math.min(close, open) - low
+total_rng  = high - low
+bull_engulf = close > open and close[1] < open[1] and body > total_rng[1] * 0.8 and close > high[1]
+bear_engulf = close < open and close[1] > open[1] and body > total_rng[1] * 0.8 and close < low[1]
+bull_pin    = body > 0 and lower_wick >= body * 2.5 and upper_wick <= body * 0.3
+bear_pin    = body > 0 and upper_wick >= body * 2.5 and lower_wick <= body * 0.3
+bull_pa     = bull_engulf or bull_pin
+bear_pa     = bear_engulf or bear_pin
+
+// ── COOLDOWN ────────────────────────────────────────────────
+var int last_trade_bar = -999
+trade_ready = bar_index - last_trade_bar >= cooldown_bars
+
+// ── ENTRY CONDITIONS ───────────────────────────────────────
+long_entry  = bull_trend and bull_slope and in_session and high_vol and bull_pa and trade_ready
+short_entry = bear_trend and bear_slope and in_session and high_vol and bear_pa and trade_ready
+
+atr = ta.atr(atr_len)
+
+if long_entry and strategy.position_size == 0
+    last_trade_bar := bar_index
+    float entry = close
+    float sl    = entry - atr * atr_mult
+    float tp    = entry + atr * atr_mult * rr_ratio
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long TP/SL", "Long", stop=sl, limit=tp)
+
+if short_entry and strategy.position_size == 0
+    last_trade_bar := bar_index
+    float entry = close
+    float sl    = entry + atr * atr_mult
+    float tp    = entry - atr * atr_mult * rr_ratio
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short TP/SL", "Short", stop=sl, limit=tp)
+
+// ── VISUAL ────────────────────────────────────────────────
+plot(ema_fast, "EMA 50",  color=color.blue,   linewidth=1)
+plot(ema_slow, "EMA 200", color=color.orange, linewidth=2)
